@@ -1,3 +1,38 @@
+# Projeto de predição de desistencia de profissionais durante o processo de recrutamento usando ciencia de dados
+## abril, 2022
+
+__Objetivo:__
+O objetivo desse projeto é criar um ranking para o conjunto de cashmembers chamados blue. .
+
+__Principal Cliente:__
+Time comercial Home Equity
+
+__Entrega de Valor:__
+Propor um visão mais analítica da performance dos cashmembers blue
+Permtir que os times comerciais tomem decisões de negócio em relação aos cashmembers blue baseado em sua performance.
+Essas decisões podem ser:
+estabelecimento de mínimos aceitáveis para os indicadores sob pena de descredenciamento do perfil blue
+ações comerciais (premiações ou bônus) mais arrojadas para os melhores cashmembers
+
+__Sobre o Método:__
+Esse ranking é baseado na análise de três variáveis consideradas de maior relevância para o time comercial, principal sponsor desse projeto.
+
+As três variáveis que compõem o ranking são: __qtd_prop_aprovados_comite__, __qtd_ctr_assinados__ e __valor_ctr_assinados__
+
+A cada uma das variáveis foi atribuido um peso conforme sugerido pelo time de negócio, são eles:
+- _1*qtd_prop_aprovados_comite_
+- _3*qtd_ctr_assinados_
+- _6*valor_ctr_assinados_
+São considerados os dados das últimas 36 semanas da data de assinatura do cliente (ctr_dt_assinatura_cliente)
+
+__Entregáveis:__
+- uma apresentação com o descritivo e proposições do ranqueamento de
+- script python (notebook) com o racional da análise e implementação
+- script python (.py) para cálculo dos scores e clusters e por fim atualização no DW
+- job pentaho que executará o script .py para atualização dos indicadores na frequência definida pelo time de negócio
+- dashboards para melhor difusão das informações dos indicadores propostos
+
+__Pré-requisitos:__
 Os códigos foram escritos considerando Python 3.8.1.
 
 Antes de execução  do código, as seguintes bibliotecas foram instaladas:
