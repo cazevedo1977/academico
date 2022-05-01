@@ -1,0 +1,27 @@
+Os códigos foram escritos considerando Python 3.8.1.
+
+Antes de execução  do código, as seguintes bibliotecas foram instaladas:
+
+pandas==0.25.3
+numpy==1.18.1
+sklearn==0.0;
+imblearn==0.0
+matplotlib==3.1.3
+seaborn==0.10.0
+ipython==7.12.0
+statsmodels==0.11.1
+matplotlib==3.1.3
+
+O arquivo src.py contém o código referente a análise exploratória e construção de conglomerados e deve ser o primeiro na execução.
+
+O arquivo modelsv3.py é constituído do código para:
+- separação das amostras em conjuntos de teste e treinamento; 
+- construção dos modelos de estatística tradicional (Regressão Logistica e Árvore de Decisão);
+- implementação dos modelos de inteligência artificial (Support Vector Machine, Floresta Aleatória, Rede Neural)
+- seleção de hyper-parametros para otimização dos modelos;
+- construção das matrizes de confusão;
+- criação dos gráficos contendo as medidas de desempenho dos modelos.
+
+Esse arquivo (modelsv3.py) deve ser executado depois de rodar o src.py.
+
+
