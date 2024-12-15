@@ -53,11 +53,13 @@ from sklearn.decomposition import PCA
 from sklearn.pipeline import Pipeline
 
 from pathlib import Path
+import contextlib
+
 
 #endregion 
 TRAIN_MODEL = False
 VALIDATE_MODEL = True
-PREDICT_DATA = True
+PREDICT_DATA = False
 current_path = Path(__file__).parent
 output_dir = os.path.abspath(current_path)
 os.makedirs(output_dir, exist_ok=True)
@@ -434,6 +436,79 @@ def default_threshold_classification(y_probs):
     y_pred_labels = np.argmax(y_probs, axis=1)
     return y_pred_labels
 
+#Binary classification using probabilities:
+def ensemble_predictions(members, testX):
+    # Make predictions
+    #with contextlib.redirect_stdout(open(os.devnull, 'w')):
+    yhats = [model.predict(testX) for model in members]
+    # Average predictions
+    averaged = np.mean(np.array(yhats), axis=0)
+    # Apply threshold to get multiclass predictions
+    result = np.argmax(averaged, axis=1).astype(int).flatten()
+    return result
+
+# evaluate a specific number of members in an ensemble
+def evaluate_n_members(members, n_members, testX, testy):
+    # select a subset of members
+    subset = members[:n_members]
+    #best_five = tuner.get_best_models(5)
+    # make prediction
+    yhat = ensemble_predictions(subset, testX)
+    # calculate accuracy
+    accuracy = accuracy_score(np.argmax(testy, axis=1), yhat)
+    return accuracy
+
+def compute_ensemble_scores(ensemble_members,X_val, y_val):
+    # evaluate different numbers of ensembles on hold out set
+    single_scores, ensemble_scores = list(), list()
+    for i, model_info in enumerate(ensemble_members):
+        # evaluate model with i members
+        ensemble_score = evaluate_n_members(ensemble_members, i+1, X_val, y_val)
+        # evaluate the i'th model standalone
+        #_, single_score = ensemble_members[i-1].evaluate(X_val, y_val, verbose=0)
+        _, single_score = model_info.evaluate(X_val, y_val, verbose=0)
+            
+        ensemble_score = round(100*ensemble_score,4)
+        single_score = round(100*single_score,4)
+        # summarize this step
+        print('> %d: single=%.3f, ensemble=%.3f' % (i, single_score, ensemble_score))
+        ensemble_scores.append(ensemble_score)
+        single_scores.append(single_score)
+
+    return ensemble_scores, single_scores
+
+def ensemble_classifier(X_val, y_val,unseen_data, tuner):
+
+    best_ensemble = tuner.get_best_models(5)
+    
+    #Get the best number of members according to accuracy
+    ensemble_scores, single_scores = compute_ensemble_scores(best_ensemble,X_val, y_val)
+    largest_number = max(ensemble_scores)
+    index_of_largest = ensemble_scores.index(largest_number)
+
+    #Once I get the best number of members, compute the ensemble prediction
+    best_ensemble = tuner.get_best_models(index_of_largest+1)
+    y_pred_labels = ensemble_predictions(best_ensemble, unseen_data)
+    save_result(predictions=y_pred_labels, submission_file='ensemble_submission.csv')
+
+    #TO TEST: compute the prediciton of the best ensemble, find the best threshould
+    #comput final result...
+    
+    # Average predictions
+    yhats = [model.predict(X_val) for model in best_ensemble]
+    y_pred = np.mean(np.array(yhats), axis=0)
+    best_thresholds = find_best_threshold_for_accuracy(y_true=y_val, y_pred_probs=y_pred)
+    print(f"Best Threshold: {best_thresholds}")
+
+    yhats = [model.predict(unseen_data) for model in best_ensemble]
+    y_pred = np.mean(np.array(yhats), axis=0)
+    y_pred_labels = apply_thresholds(y_probs=y_pred, thresholds=best_thresholds)
+    #accuracy = accuracy_score(np.argmax(y_val, axis=1), y_pred_labels)
+    #print(f"Best Accuracy: {accuracy}")
+    
+    
+    save_result(predictions=y_pred_labels, submission_file='submission.csv')
+    
     
 def validate_model(X_val, y_val, tuner):
     """
@@ -535,7 +610,8 @@ def save_result(predictions, submission_file):
 
 def main():
     # Carrega a base de dados a partir de seu caminho
-    data = np.load('data/dataset.npz')
+    #data = np.load('data/dataset.npz')
+    data = np.load("{}/data/dataset.npz".format(current_path))
     #print(data.files)
 
     X = data['X_train']
@@ -580,8 +656,8 @@ def main():
 
     best_thresholds = {0: 0.5, 1: 0.5, 2: 0.5, 3: 0.5, 4: 0.5}
     if VALIDATE_MODEL:    
+        ensemble_classifier(X_val=X_test, y_val=y_test,unseen_data = unseendata,tuner=tuner)
         best_thresholds = validate_model(X_val=X_test, y_val=y_test,tuner=tuner)
-    
     
     if PREDICT_DATA:
         predictions(unseen_data=unseendata, best_thresholds=best_thresholds, tuner=tuner)

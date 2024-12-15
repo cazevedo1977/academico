@@ -7,30 +7,14 @@ import tensorflow as tf
 
 
 from keras.utils import to_categorical # type: ignore
-from tensorflow.keras.utils import to_categorical
-
 from keras_tuner import HyperModel, BayesianOptimization
-from tensorflow.keras.models import Model
-from tensorflow.keras.layers import Input, Dense, BatchNormalization, Dropout, Conv2D, MaxPooling2D, Flatten
-from tensorflow.keras.losses import CategoricalCrossentropy
-from tensorflow.keras.metrics import CategoricalAccuracy # type: ignore
-from keras.callbacks import EarlyStopping, ReduceLROnPlateau, ModelCheckpoint
-#from tensorflow.keras.callbacks import EarlyStopping, ReduceLROnPlateau, ModelCheckpoint
-from tensorflow.keras.preprocessing.image import ImageDataGenerator # type: ignore
-from sklearn.model_selection import train_test_split
-from tensorflow.keras.models import load_model
-import multiprocessing
-
-
-
-
-
 
 
 
 
 from sklearn.preprocessing import MinMaxScaler, OneHotEncoder
 from sklearn.preprocessing import StandardScaler
+from sklearn.model_selection import train_test_split
 from sklearn.metrics import precision_score
 from sklearn.metrics import recall_score
 from sklearn.metrics import f1_score
@@ -48,36 +32,41 @@ from tensorflow.keras.layers import Dense # type: ignore
 from sklearn.model_selection import train_test_split, GridSearchCV, StratifiedKFold
 from sklearn.preprocessing import StandardScaler
 from tensorflow.keras.models import Sequential
-
+from tensorflow.keras.layers import Input, Dense, BatchNormalization, Dropout
 from tensorflow.keras.optimizers import Adam, SGD, RMSprop
 from tensorflow.keras.regularizers import l2
 from keras.layers import Input
 from tensorflow.keras.callbacks import Callback
-
-
+from keras.callbacks import EarlyStopping, ReduceLROnPlateau, ModelCheckpoint
+from tensorflow.keras import Input, Model
 from tensorflow.keras.layers import Dense, BatchNormalization
-from tensorflow.keras.initializers import GlorotNormal # type: ignore
-from tensorflow.keras.optimizers import Adam # type: ignore
+from tensorflow.keras.initializers import GlorotNormal
+from tensorflow.keras.optimizers import Adam
+from tensorflow.keras.losses import CategoricalCrossentropy
+from tensorflow.keras.metrics import CategoricalAccuracy
 
-
+from tensorflow.keras.models import Model
+from tensorflow.keras.losses import CategoricalCrossentropy
+from tensorflow.keras.metrics import CategoricalAccuracy
 
 from sklearn.decomposition import PCA
 from sklearn.pipeline import Pipeline
 
 from pathlib import Path
+import contextlib
+
 
 #endregion 
-TRAIN_MODEL = False
-VALIDATE_MODEL = True
+TRAIN_MODEL = True
+VALIDATE_MODEL = False
 PREDICT_DATA = False
-num_cpus = multiprocessing.cpu_count()
+ENSEMBLE_PREDICTION = False
 current_path = Path(__file__).parent
 output_dir = os.path.abspath(current_path)
 os.makedirs(output_dir, exist_ok=True)
 
 
 #region NN Class, methods, optimizers and inicialization
-#output_dir = os.path.abspath('C:\\Caio\\decalearn\\task2')
 
 '''
 The HyperModel Class:
@@ -86,12 +75,6 @@ Highlights:
  - Despite dimensionality reduction, there are still hundreds of features in the dataset. Additionally, I noticed some degree of overfitting, so I decided to test regularization techniques. 
 
  Considering the information above:
- - The input shape is set to the dimensions of the images (e.g., (224, 224, 3)).
- - Convolutional layers are added to extract spatial features from the images.
- - MaxPooling2D layers are used to reduce the spatial dimensions of the feature maps.
- - BatchNormalization and Dropout layers are used to improve training stability and prevent overfitting.
- - The number of convolutional and fully connected layers, along with their hyperparameters, are determined by the hyperparameter tuner (hp).
-
  - Increased Units and Layers: I increased the maximum number of units and allowed up to 5 hidden layers. More layers with different configurations to capture more complex patterns.
  - Regularization: Added L2 regularization and dropout layers to each dense layer to reduce overfitting.
  - Activation Functions: Added 'tanh' as an additional activation function choice.
@@ -100,98 +83,80 @@ Highlights:
  - Max Trials: Increased max_trials to 50 for a more exhaustive search of hyperparameters.
  - Learning Rate Schedulers: Implement learning rate schedules for better convergence.
  - Feature Engineering: Apply techniques like Principal Component Analysis (PCA) for dimensionality reduction if feasible.
- -
 
-
- 
 '''
 
-
-class HyperModel_task3(HyperModel):
+class HyperModel_task4(HyperModel):
     
-    def __init__(self, num_classes, input_shape):
+    def __init__(self, num_classes, input_dim):
         super().__init__()
         self.num_classes = num_classes
-        self.input_shape = input_shape
+        self.input_dim = input_dim
         
     def build(self, hp):
         initializer = tf.keras.initializers.GlorotNormal(seed=12227)
 
-        inputs = Input(shape=self.input_shape)
-
-        # First Conv Layer
-        H = Conv2D(
-            filters=hp.Int('filters_1', min_value=32, max_value=256, step=32),
-            kernel_size=hp.Choice('kernel_size_1', values=[3, 5]),
+        inputs = Input(shape=(self.input_dim,))
+        H = Dense(
+            units=hp.Int('units_1', min_value=32, max_value=128, step=32),
             activation=hp.Choice('activation_1', values=['relu', 'swish', 'tanh']),
             kernel_initializer=initializer,
             kernel_regularizer=tf.keras.regularizers.l2(hp.Float('l2_1', min_value=1e-5, max_value=1e-2, sampling='LOG'))
         )(inputs)
-        H = MaxPooling2D(pool_size=(2, 2))(H)
-        H = BatchNormalization()(H)
-        H = Dropout(rate=hp.Float('dropout_1', min_value=0.1, max_value=0.5, step=0.1))(H)
-
-        # Additional Conv Layers
-        for i in range(hp.Int('num_conv_layers', 1, 5)):
-            H = Conv2D(
-                filters=hp.Int(f'filters_{i+2}', min_value=32, max_value=256, step=32),
-                kernel_size=hp.Choice(f'kernel_size_{i+2}', values=[3, 5]),
+        #H = BatchNormalization()(H)
+        #H = Dropout(rate=hp.Float('dropout_1', min_value=0.1, max_value=0.5, step=0.1))(H)
+        
+        for i in range(hp.Int('num_layers', 1, 5)):
+            H = Dense(
+                units=hp.Int(f'units_{i+2}', min_value=32, max_value=128, step=32),
                 activation=hp.Choice(f'activation_{i+2}', values=['relu', 'swish', 'tanh']),
                 kernel_initializer=initializer,
                 kernel_regularizer=tf.keras.regularizers.l2(hp.Float(f'l2_{i+2}', min_value=1e-5, max_value=1e-2, sampling='LOG'))
             )(H)
-            H = MaxPooling2D(pool_size=(2, 2))(H)
-            H = BatchNormalization()(H)
-            H = Dropout(rate=hp.Float(f'dropout_{i+2}', min_value=0.1, max_value=0.5, step=0.1))(H)
-
-        H = Flatten()(H)
-
-        # Fully Connected Layers
-        for i in range(hp.Int('num_fc_layers', 1, 3)):
-            H = Dense(
-                units=hp.Int(f'units_fc_{i+1}', min_value=64, max_value=1024, step=64),
-                activation=hp.Choice(f'activation_fc_{i+1}', values=['relu', 'swish', 'tanh']),
-                kernel_initializer=initializer,
-                kernel_regularizer=tf.keras.regularizers.l2(hp.Float(f'l2_fc_{i+1}', min_value=1e-5, max_value=1e-2, sampling='LOG'))
-            )(H)
-            H = BatchNormalization()(H)
-            H = Dropout(rate=hp.Float(f'dropout_fc_{i+1}', min_value=0.1, max_value=0.5, step=0.1))(H)
+            #H = BatchNormalization()(H)
+            #H = Dropout(rate=hp.Float(f'dropout_{i+2}', min_value=0.1, max_value=0.5, step=0.1))(H)
 
         outputs = Dense(self.num_classes, activation='softmax', kernel_initializer=initializer)(H)
         model = Model(inputs=inputs, outputs=outputs)
 
+        #optimizer_name = hp.Choice('optimizer', values=['adam', 'sgd', 'rmsprop'])
+        optimizer_name = hp.Choice('optimizer', values=['adam', 'rmsprop'])
+        if optimizer_name == 'adam':
+            optimizer = tf.keras.optimizers.Adam(learning_rate=0.01)
+        #elif optimizer_name == 'sgd':
+        #    optimizer = tf.keras.optimizers.SGD(learning_rate=0.01)
+        elif optimizer_name == 'rmsprop':
+            optimizer = tf.keras.optimizers.RMSprop(learning_rate=0.01)
+
         model.compile(
-            optimizer=hp.Choice('optimizer', values=['adam', 'sgd', 'rmsprop']),
+            #optimizer=hp.Choice('optimizer', values=['adam', 'sgd', 'rmsprop']),
+            optimizer=optimizer,
             loss=CategoricalCrossentropy(),
             metrics=[CategoricalAccuracy()]
         )
         
         return model
 
-
-
-
-def init_class(num_classes, input_shape):
+def init_class(num_classes, input_dim):
     """
-    Initializes the hyperparameter tuning process for an image classification model.
+    Initializes the hyperparameter tuning process for a multi-class classification model.
 
     This function creates a BayesianOptimization tuner, defines callbacks for early stopping, learning rate reduction, and model checkpointing,
     and returns the tuner and callbacks for use in the model training process.
 
     Args:
         num_classes (int): The number of classes in the multi-class classification problem.
-        input_shape (tuple): The shape of the input images (height, width, channels).
-        output_dir (str): The directory to save the tuning results and best model.
+        input_dim (int): The dimensionality of the input features.
 
     Returns:
         tuple: A tuple containing the tuner, early stopping callback, learning rate reduction callback, and model checkpoint callback.
-            - tuner (kerastuner.tuners.BayesianOptimization): The BayesianOptimization tuner for hyperparameter search.
+            - tuner (keras_tuner.tuners.BayesianOptimization): The BayesianOptimization tuner for hyperparameter search.
             - early_stopping (keras.callbacks.EarlyStopping): The early stopping callback to prevent overfitting.
             - reduce_lr (keras.callbacks.ReduceLROnPlateau): The learning rate reduction callback to adjust the learning rate during training.
             - model_checkpoint (keras.callbacks.ModelCheckpoint): The model checkpoint callback to save the best model during training.
     """
 
-    hypermodel = HyperModel_task3(num_classes=num_classes, input_shape=input_shape)
+    hypermodel = HyperModel_task4(num_classes=num_classes, input_dim=input_dim)
 
     # Instantiate the tuner
     tuner = BayesianOptimization(
@@ -200,8 +165,8 @@ def init_class(num_classes, input_shape):
         max_trials=50,
         executions_per_trial=3,
         directory=output_dir,
-        project_name='hyperparam_tuning_image',
-        #overwrite=True  # Overwrite the previous results if needed
+        project_name='hyperparam_tuning_numeric',
+        # overwrite=True  # Overwrite the previous results
     )
 
     # Display the search space summary
@@ -224,145 +189,162 @@ def init_class(num_classes, input_shape):
 
 #region DATA PREPARATION FUNCTIONS
 
-"""
-1. Image Resizing
-Ensure all images are of the same size since neural networks require fixed input dimensions. Resize images to a consistent size, such as (224, 224, 3) if using common architectures like VGG, ResNet, or MobileNet.
-2. Data Normalization
-Normalize pixel values to a range of [0, 1] by dividing by 255. This helps in faster convergence during training.
-3. Data Augmentation
-Apply data augmentation to artificially expand the dataset. This helps in improving the model's generalization by creating variations of the images.
-4. One-Hot Encoding of Labels
-Convert class labels to one-hot encoded vectors. This is essential for multi-class classification tasks.
-5. Train-Validation Split
-Split the data into training and validation sets to evaluate the model's performance on unseen data during training.
-6. Handling Imbalanced Data
-If the dataset is imbalanced, consider techniques such as class weighting, oversampling the minority class, or undersampling the majority class.
-# Example of class weighting
-class_weights = {0: 1., 1: 50., 2: 1., 3: 1., 4: 1.}
-# During model training
-model.fit(X_train, y_train, epochs=50, validation_data=(X_val, y_val), class_weight=class_weights, callbacks=[...])
-7. Data Generator for Large Datasets
-For large datasets, use data generators to load data in batches to avoid memory issues.
-
-"""
-def dataprep_old(X,y, unseendata):
-    # Normalize and augment data
-    datagen = ImageDataGenerator(
-        rescale=1./255,
-        rotation_range=20,
-        width_shift_range=0.2,
-        height_shift_range=0.2,
-        shear_range=0.2,
-        zoom_range=0.2,
-        horizontal_flip=True,
-        fill_mode='nearest'
-    )
-
-    # Split data into training and validation sets
-    X_train, X_val, y_train, y_val = train_test_split(X, y, test_size=0.2, stratify=y, random_state=42)
-
-    unique_values, indices, counts = np.unique(y, return_index=True, return_counts=True)
-
-    print("target unique values:", unique_values)
-    print("Counts:", counts)
-
-    # Convert labels to one-hot encoding
-    y_train = to_categorical(y_train, num_classes=unique_values.size)
-    y_val = to_categorical(y_val, num_classes=unique_values.size)
-
-    # Train generator
-    train_generator = datagen.flow(X_train, y_train, batch_size=32)
-
-    # Validation generator (without augmentation)
-    val_datagen = ImageDataGenerator(rescale=1./255)
-    validation_generator = val_datagen.flow(X_val, y_val, batch_size=32)
-
-    # Prediction generator (without augmentation)
-    unseen_datagen = ImageDataGenerator(rescale=1./255)
-    unseendata_generator = unseen_datagen.flow(unseendata, batch_size=1, shuffle=False)
-    
-    
-    return train_generator, validation_generator, unseendata_generator
-
-def dataprep(X, y, unseen_data):
+def dataprep_full_pca(dataset_train_val, target, unseendata):
     """
-    Prepares the data for training and validation.
-
-    This function normalizes the image data and splits it into training and validation sets.
-    It also converts the labels to one-hot encoding.
+    Prepares data for a ML model by applying standardization and PCA. 
+    It splits the data into training and testing sets, fits the pipeline to the training data, and transforms all the data using the learned parameters. 
+    This process helps to improve the performance of many machine learning algorithms by scaling the features and reducing the dimensionality of the data.
 
     Args:
-        X (numpy.ndarray): The image data.
-        y (numpy.ndarray): The labels.
-        unseen_data (numpy.ndarray): The unseen data for prediction.
+        dataset_train_val (numpy.ndarray): The dataset containing both training and validation data.
+        target (numpy.ndarray): The target labels for the training and validation data.
+        unseendata (numpy.ndarray): The unseen data for which predictions will be made.
 
     Returns:
-        tuple: A tuple containing the training generator, validation generator, and unseen data generator.
-            - train_generator (ImageDataGenerator): The training data generator.
-            - validation_generator (ImageDataGenerator): The validation data generator.
-            - unseen_data_generator (ImageDataGenerator): The unseen data generator.
+        tuple: A tuple containing the transformed unseen data, training data, testing data, training labels, and testing labels.
+            - unseendata (numpy.ndarray): The transformed unseen data.
+            - X_train (numpy.ndarray): The transformed training data.
+            - X_test (numpy.ndarray): The transformed testing data.
+            - y_train (numpy.ndarray): The training labels.
+            - y_test (numpy.ndarray): The testing labels.
     """
+    
+    X_train, X_test, y_train, y_test = None, None, None, None
+    # Create a pipeline for standardization and PCA
+    pipeline = Pipeline([
+        ('scaler', StandardScaler()),
+        ('pca', PCA(n_components=0.95))
+    ])
+    
+    seed = 7
+    test_size = 0.2
+    X_train, X_test, y_train, y_test = train_test_split(dataset_train_val, target, test_size=test_size, random_state=seed)
+    
+    # Transform the features
+    X_train = pipeline.fit_transform(X_train)
+    X_test = pipeline.transform(X_test)
+    #print('train shape:{} test shape: {} '.format(X_train.shape, X_test.shape))
+    
+    unseendata  = pipeline.transform(unseendata)
+    
+    return unseendata, X_train, X_test, y_train, y_test
 
-    # Normalize the data
-    datagen = ImageDataGenerator(rescale=1./255)
-
-    # Split data into training and validation sets
-    X_train, X_val, y_train, y_val = train_test_split(X, y, test_size=0.2, stratify=y, random_state=42)
-
-    unique_values, indices, counts = np.unique(y, return_index=True, return_counts=True)
-
-    print("target unique values:", unique_values)
-    print("Counts:", counts)
-
-    # Convert labels to one-hot encoding
-    y_train = to_categorical(y_train, num_classes=unique_values.size)
-    y_val = to_categorical(y_val, num_classes=unique_values.size)
-
-    # Train generator
-    train_generator = datagen.flow(X_train, y_train, batch_size=16)
-
-    # Validation generator (without augmentation)
-    validation_generator = datagen.flow(X_val, y_val, batch_size=16)
-
-    # Prediction generator (without augmentation)
-    #unseen_data_generator = datagen.flow(unseen_data, batch_size=1, shuffle=False)
-    unseen_data_generator = None
-
-    return train_generator, validation_generator, unseen_data_generator
-
-def preprocess_unseen_data(unseen_data, target_size=(224, 224)):
+def dataprep_full_scalar(dataset_train_val, target, unseendata):
     """
-    Preprocess unseen data for prediction.
+    Prepares data for a ML model by applying standardization. 
+    It splits the data into training and testing sets, fits the pipeline to the training data, and transforms all the data using the learned parameters. 
+    This process helps to improve the performance of many machine learning algorithms by scaling the features of the data.
 
     Args:
-        unseen_data (numpy.ndarray): Array of unseen images.
-        target_size (tuple): Desired image size.
+        dataset_train_val (numpy.ndarray): The dataset containing both training and validation data.
+        target (numpy.ndarray): The target labels for the training and validation data.
+        unseendata (numpy.ndarray): The unseen data for which predictions will be made.
 
     Returns:
-        numpy.ndarray: Preprocessed image array.
+        tuple: A tuple containing the transformed unseen data, training data, testing data, training labels, and testing labels.
+            - unseendata (numpy.ndarray): The transformed unseen data.
+            - X_train (numpy.ndarray): The transformed training data.
+            - X_test (numpy.ndarray): The transformed testing data.
+            - y_train (numpy.ndarray): The training labels.
+            - y_test (numpy.ndarray): The testing labels.
     """
-    # Normalize the unseen data
-    unseen_datagen = ImageDataGenerator(rescale=1./255)
-    unseen_data = unseen_datagen.flow(unseen_data, batch_size=1, shuffle=False)
     
-    return unseen_data
+    X_train, X_test, y_train, y_test = None, None, None, None
+    # Create a pipeline for standardization
+    pipeline = Pipeline([
+        ('scaler', StandardScaler())
+        #('scaler', MinMaxScaler())
+        #('scaler', MinMaxScaler(feature_range=(-1, 1)))
+    ])
+    
+    seed = 7
+    test_size = 0.2
+    X_train, X_test, y_train, y_test = train_test_split(dataset_train_val, target, test_size=test_size, random_state=seed)
+    
+    # Transform the features
+    X_train = pipeline.fit_transform(X_train)
+    X_test = pipeline.transform(X_test)
+    print('train shape:{} test shape: {} '.format(X_train.shape, X_test.shape))
+    
+    unseendata  = pipeline.transform(unseendata)
+    
+    return unseendata, X_train, X_test, y_train, y_test
+
+def dataprep_pearson(dataset, target, split=True):
+    """
+    Prepares data for a ML model by removing highly correlated features.
+    It calculates the Pearson correlation matrix for the dataset and removes columns based on a specified threshold.
+    Optionally splits the data into training and testing sets for model evaluation.
+
+    Args:
+        dataset (numpy.ndarray): The dataset containing the features.
+        target (numpy.ndarray): The target labels for the dataset.
+        split (bool, optional): Whether to split the data into training and testing sets. Defaults to True.
+
+    Returns:
+        tuple: A tuple containing the prepared data:
+            - dataset (numpy.ndarray): The dataset with highly correlated features removed.
+            - X_train (numpy.ndarray): The training data (if split is True).
+            - X_test (numpy.ndarray): The testing data (if split is True).
+            - y_train (numpy.ndarray): The training labels (if split is True).
+            - y_test (numpy.ndarray): The testing labels (if split is True).
+    """
+    X_train, X_test, y_train, y_test = None, None, None, None
+    
+    pearson_threshold = 0.9
+    dataset = remove_highly_correlated_columns(dataset, pearson_threshold)
+    print('non-correlated features: ', dataset.shape)
+
+    if split:
+        seed = 7
+        test_size = 0.2
+        X_train, X_test, y_train, y_test = train_test_split(dataset, target, test_size=test_size, random_state=seed)
+    
+    return dataset, X_train, X_test, y_train, y_test
+
+def remove_highly_correlated_columns(data, threshold=0.9):
+    """
+    Remove columns from a NumPy array where the correlation coefficient
+    is greater than a specified threshold.
+
+    Parameters:
+    - data: np.ndarray, the input array.
+    - threshold: float, the correlation coefficient threshold.
+
+    Returns:
+    - np.ndarray, the array with highly correlated columns removed.
+    """
+    if not isinstance(data, np.ndarray):
+        raise ValueError("Input data must be a NumPy array.")
+    
+    corr_matrix = np.corrcoef(data, rowvar=False)
+    to_remove = set()
+    
+    for i in range(corr_matrix.shape[0]):
+        for j in range(i+1, corr_matrix.shape[0]):
+            if abs(corr_matrix[i, j]) > threshold:
+                to_remove.add(j)
+
+    columns_to_keep = [i for i in range(data.shape[1]) if i not in to_remove]
+    filtered_data = data[:, columns_to_keep]
+
+    return filtered_data
 
 #endregion
 
 #region MODEL TRAINING
     
-def train_model(train_generator, validation_generator, tuner, early_stopping, reduce_lr, model_checkpoint):
-    # Perform hyperparameter tuning
+def train_model(X_train, y_train, X_val, y_val, tuner, early_stopping, reduce_lr, model_checkpoint):
+    # Start the hyperparameter search
     tuner.search(
-        train_generator,
-        epochs=30,
-        validation_data=validation_generator,
+        x=X_train,  # Replace with your training data
+        y=y_train,  # Replace with your training labels
+        epochs=70, #50 (melhor)
+        validation_data=(X_val, y_val),  # Replace with your validation data
+        batch_size=32,
         callbacks=[early_stopping, reduce_lr, model_checkpoint],
-        batch_size=16,
-        #multi_worker_mirrored_strategy=True,
-        #workers=num_cpus,
         verbose=2
-)
+    )    
 #endregion
 
 #region MODEL VALIDATION
@@ -459,29 +441,6 @@ def default_threshold_classification(y_probs):
     y_pred_labels = np.argmax(y_probs, axis=1)
     return y_pred_labels
 
-def evaluate_best_model(validation_generator):
-    """
-    Loads the best model saved during hyperparameter tuning and evaluates it on the validation data.
-
-    Args:
-        output_dir (str): Directory where the best model is saved.
-        validation_generator (ImageDataGenerator): Data generator for the validation data.
-
-    Returns:
-        float: The validation accuracy of the best model.
-    """
-    # Load the best model
-    best_model_path = os.path.join(output_dir, 'best_model.keras')
-    best_model = load_model(best_model_path)
-    
-    # Evaluate the model on validation data
-    val_loss, val_accuracy = best_model.evaluate(validation_generator)
-    
-    print(f"Validation Accuracy: {val_accuracy * 100:.2f}%")
-    
-    return val_accuracy
-
-
 #Binary classification using probabilities:
 def ensemble_predictions(members, testX):
     # Make predictions
@@ -523,10 +482,9 @@ def compute_ensemble_scores(ensemble_members,X_val, y_val):
 
     return ensemble_scores, single_scores
 
-
 def ensemble_classifier(X_val, y_val,unseen_data, tuner):
 
-    best_ensemble = tuner.get_best_models(5)
+    best_ensemble = tuner.get_best_models(10)
     
     #Get the best number of members according to accuracy
     ensemble_scores, single_scores = compute_ensemble_scores(best_ensemble,X_val, y_val)
@@ -536,7 +494,7 @@ def ensemble_classifier(X_val, y_val,unseen_data, tuner):
     #Once I get the best number of members, compute the ensemble prediction
     best_ensemble = tuner.get_best_models(index_of_largest+1)
     y_pred_labels = ensemble_predictions(best_ensemble, unseen_data)
-    save_result(predictions=y_pred_labels, submission_file='ensemble_submission.csv')
+    #save_result(predictions=y_pred_labels, submission_file='ensemble_submission.csv')
 
     #TO TEST: compute the prediciton of the best ensemble, find the best threshould
     #comput final result...
@@ -550,15 +508,12 @@ def ensemble_classifier(X_val, y_val,unseen_data, tuner):
     yhats = [model.predict(unseen_data) for model in best_ensemble]
     y_pred = np.mean(np.array(yhats), axis=0)
     y_pred_labels = apply_thresholds(y_probs=y_pred, thresholds=best_thresholds)
-    #accuracy = accuracy_score(np.argmax(y_val, axis=1), y_pred_labels)
-    #print(f"Best Accuracy: {accuracy}")
+    save_result(predictions=y_pred_labels, submission_file='ensemble_threshold_submission.csv')
     
-    
-    save_result(predictions=y_pred_labels, submission_file='submission.csv')
-
-
-
-def validate_model(validation_generator, tuner):
+    y_pred_labels =default_threshold_classification(y_probs=y_pred)
+    save_result(predictions=y_pred_labels, submission_file='ensemble_default_submission.csv')
+        
+def validate_model(X_val, y_val, tuner):
     """
     Validates the best model found during hyperparameter tuning.
 
@@ -576,12 +531,10 @@ def validate_model(validation_generator, tuner):
     """
     
     best_model = tuner.get_best_models(num_models=1)[0]
-    #best_model.summary()
+    best_model.summary()
     # Evaluate the best model
-    y_pred = best_model.predict(validation_generator)
+    y_pred = best_model.predict(X_val)
     
-    
-    """
     best_thresholds = find_best_threshold_for_accuracy(y_true=y_val, y_pred_probs=y_pred)
     #best_thresholds = find_best_threshold_for_f1score(y_true=y_val, y_pred_probs=y_pred)
     print(f"Best Threshold: {best_thresholds}")
@@ -592,7 +545,7 @@ def validate_model(validation_generator, tuner):
     print(classification_report(np.argmax(y_val, axis=1), y_pred_labels))
 
     #threshold_default = np.array([0.5,0.5,0.5,0.5,0.5])
-    threshold_default = {0: 0.5, 1: 0.5, 2: 0.5, 3: 0.5, 4: 0.5}
+    threshold_default = {0: 0.5, 1: 0.5, 2: 0.5, 3: 0.5, 4: 0.5, 5: 0.5, 6: 0.5}
 
     y_test_pred = apply_thresholds(y_probs=y_pred, thresholds=threshold_default)
     accuracy = accuracy_score(np.argmax(y_val, axis=1), y_test_pred)
@@ -605,7 +558,6 @@ def validate_model(validation_generator, tuner):
     print(classification_report(np.argmax(y_val, axis=1), y_test_pred))
 
     return best_thresholds
-    """
 
 
 #endregion
@@ -623,7 +575,7 @@ def predictions(unseen_data, best_thresholds, tuner):
     for key in best_hp.values.keys():
         print(f"{key}: {best_hp.get(key)}")
 
-    #best_model.summary()
+    best_model.summary()
     
     y_pred = best_model.predict(unseen_data)
     
@@ -631,7 +583,7 @@ def predictions(unseen_data, best_thresholds, tuner):
     predicted_classes = apply_thresholds(y_probs=y_pred, thresholds=best_thresholds)
     #predicted_classes = default_threshold_classification(y_probs=y_pred)
     
-    save_result(predictions=predicted_classes, submission_file='submission.csv')
+    save_result(predictions=predicted_classes, submission_file='noensemble_threshold_submission.csv')
 
 def save_result(predictions, submission_file):
     #y_test_probs = predictions.ravel()
@@ -657,57 +609,70 @@ def save_result(predictions, submission_file):
 
 #endregion
 
-"""
-X_train: um vetor em que cada elemento é uma imagem. 
-Cada imagem pode ser representada por uma matriz de formato (altura, largura, canais de cor). 
-Por exemplo uma imagem do formato (224, 224, 3) seria uma matriz de 224x224 em que cada elemento é um vetor de 3 inteiros (x, y, z) de 0 a 255. 
-Nesse problema, todas as imagens são (224, 224, 3).
 
-y_train: um vetor em que o n-ésimo elemento é a classificação da n-ésima amostra de X_train. 
-Todos os elementos desse vetor são do tipo int64, sendo a classificação da amostra: 0, 1, 2, 3 ou 4.
-"""
+
 def main():
     # Carrega a base de dados a partir de seu caminho
+    #data = np.load('data/dataset.npz')
     data = np.load("{}/data/dataset.npz".format(current_path))
+    #print(data.files)
 
     X = data['X_train']
-    #X = X.reshape(-1,224,224,3) #reorganiza o array em um array 1 x 224 x 224 x 3
-    
     y = data['y_train']
-    #y = y.reshape(-1,1) #reorganiza o array em um array 1 x 1
+    y = y.reshape(-1,1) #reorganiza o array em um array 1 x 1
+    
+    
+    #print(X[:10])
     
     unseen_data = data['X_test']
     #print('features: ', unseen_data.shape)
+    unseendata = None
+    #X, X_train, X_test, y_train, y_test = dataprep_pearson(X, y, split = True)
+    unseendata, X_train, X_test, y_train, y_test = dataprep_full_scalar(dataset_train_val=X, target=y, unseendata= unseen_data)
+    #unseendata, X_train, X_test, y_train, y_test = dataprep_full_pca(unseendata= unseen_data, dataset_train_val=X, target=y) # worst option
+    #print(X_train[:10])
+    #if not unseendata:
+    #    unseendata= unseen_data
     
-    unseendata, train_generator, validation_generator = dataprep(X,y, unseen_data)
+    
+    combined_array = np.concatenate((X_train, X_test), axis=0)
+    df = pd.DataFrame(combined_array.reshape(X_train.shape[0] + X_test.shape[0], -1))
+    combined_array_y = np.concatenate((y_train, y_test), axis=0)
+    df['target'] = combined_array_y
+    df.to_csv('dataset.csv')
+    
+    #df = pd.DataFrame(unseen_data)
+    #df['target'] = ''
+    #df.to_csv('unseen_data.csv')
 
-    # Check dimensions of X and y from train_generator
-    for batch_x, batch_y in train_generator:
-        print("Batch X shape:", batch_x.shape)
-        print("Batch Y shape:", batch_y.shape)
-        break  # Stop after checking one batch
+    print('train shape: ', X_train.shape)
+    print('test shape: ', X_test.shape)
+    print('target trainning dimensions: ', y_train.shape)
+    print('target testing dimensions: ', y_test.shape)
 
-    print('train/test shape: ', X.shape)
-    print('target trainning/testing dimensions: ', y.shape)
+    unique_values, indices, counts = np.unique(y_train, return_index=True, return_counts=True)
 
-    unique_values, indices, counts = np.unique(y, return_index=True, return_counts=True)
+    print("target unique values:", unique_values)
+    print("Counts:", counts)
 
-
-
-    tuner, early_stopping, reduce_lr, model_checkpoint = init_class(num_classes=unique_values.size, input_shape=(X.shape[1], X.shape[2],X.shape[3]))
-
+    # One-hot encode the labels
+    y_train = to_categorical(y_train, num_classes=unique_values.size)
+    y_test = to_categorical(y_test, num_classes=unique_values.size)
+    
+    tuner, early_stopping, reduce_lr, model_checkpoint = init_class(num_classes=unique_values.size,input_dim=X_train.shape[1])
 
     if TRAIN_MODEL:
-        train_model(train_generator= train_generator, validation_generator=validation_generator,tuner=tuner, early_stopping=early_stopping, reduce_lr=reduce_lr , model_checkpoint=model_checkpoint)
+        train_model(X_train=X_train, y_train=y_train, X_val= X_test, y_val= y_test, tuner=tuner, early_stopping=early_stopping, reduce_lr=reduce_lr , model_checkpoint=model_checkpoint)
 
-    best_thresholds = {0: 0.5, 1: 0.5, 2: 0.5, 3: 0.5, 4: 0.5}
+    best_thresholds = {0: 0.5, 1: 0.5, 2: 0.5, 3: 0.5, 4: 0.5, 5: 0.5, 6: 0.5}
     if VALIDATE_MODEL:    
-        #evaluate_best_model(validation_generator=validation_generator)
-        #best_thresholds = validate_model(validation_generator=validation_generator, tuner=tuner)
-        ensemble_classifier(X_val=X_test, y_val=y_test,unseen_data = unseendata,tuner=tuner)
+        best_thresholds = validate_model(X_val=X_test, y_val=y_test,tuner=tuner)
     
     if PREDICT_DATA:
         predictions(unseen_data=unseendata, best_thresholds=best_thresholds, tuner=tuner)
+    
+    if ENSEMBLE_PREDICTION:
+        ensemble_classifier(X_val=X_test, y_val=y_test,unseen_data = unseendata,tuner=tuner)
     
 if __name__ == "__main__":
     main()
